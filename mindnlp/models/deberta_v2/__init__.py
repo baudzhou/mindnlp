@@ -12,114 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
+# if TYPE_CHECKING:
+from .configuration_deberta_v2 import (
+    DEBERTA_V2_PRETRAINED_CONFIG_ARCHIVE_MAP,
+    DebertaV2Config,
+)
+from .tokenization_deberta_v2 import DebertaV2Tokenizer
 
-from ...utils import (
-    OptionalDependencyNotAvailable,
-    _LazyModule,
-    is_tf_available,
-    is_tokenizers_available,
-    is_torch_available,
+from .modeling_deberta_v2 import (
+    DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST,
+    DebertaV2ForMaskedLM,
+    DebertaV2ForMultipleChoice,
+    DebertaV2ForQuestionAnswering,
+    DebertaV2ForSequenceClassification,
+    DebertaV2ForTokenClassification,
+    DebertaV2Model,
+    DebertaV2PreTrainedModel,
 )
 
+# else:
+#     import sys
 
-_import_structure = {
-    "configuration_deberta_v2": ["DEBERTA_V2_PRETRAINED_CONFIG_ARCHIVE_MAP", "DebertaV2Config", "DebertaV2OnnxConfig"],
-    "tokenization_deberta_v2": ["DebertaV2Tokenizer"],
-}
-
-try:
-    if not is_tokenizers_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["tokenization_deberta_v2_fast"] = ["DebertaV2TokenizerFast"]
-
-try:
-    if not is_tf_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["modeling_tf_deberta_v2"] = [
-        "TF_DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST",
-        "TFDebertaV2ForMaskedLM",
-        "TFDebertaV2ForQuestionAnswering",
-        "TFDebertaV2ForSequenceClassification",
-        "TFDebertaV2ForTokenClassification",
-        "TFDebertaV2Model",
-        "TFDebertaV2PreTrainedModel",
-    ]
-
-try:
-    if not is_torch_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["modeling_deberta_v2"] = [
-        "DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST",
-        "DebertaV2ForMaskedLM",
-        "DebertaV2ForMultipleChoice",
-        "DebertaV2ForQuestionAnswering",
-        "DebertaV2ForSequenceClassification",
-        "DebertaV2ForTokenClassification",
-        "DebertaV2Model",
-        "DebertaV2PreTrainedModel",
-    ]
-
-
-if TYPE_CHECKING:
-    from .configuration_deberta_v2 import (
-        DEBERTA_V2_PRETRAINED_CONFIG_ARCHIVE_MAP,
-        DebertaV2Config,
-        DebertaV2OnnxConfig,
-    )
-    from .tokenization_deberta_v2 import DebertaV2Tokenizer
-
-    try:
-        if not is_tokenizers_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .tokenization_deberta_v2_fast import DebertaV2TokenizerFast
-
-    try:
-        if not is_tf_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .modeling_tf_deberta_v2 import (
-            TF_DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST,
-            TFDebertaV2ForMaskedLM,
-            TFDebertaV2ForQuestionAnswering,
-            TFDebertaV2ForSequenceClassification,
-            TFDebertaV2ForTokenClassification,
-            TFDebertaV2Model,
-            TFDebertaV2PreTrainedModel,
-        )
-
-    try:
-        if not is_torch_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .modeling_deberta_v2 import (
-            DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST,
-            DebertaV2ForMaskedLM,
-            DebertaV2ForMultipleChoice,
-            DebertaV2ForQuestionAnswering,
-            DebertaV2ForSequenceClassification,
-            DebertaV2ForTokenClassification,
-            DebertaV2Model,
-            DebertaV2PreTrainedModel,
-        )
-
-else:
-    import sys
-
-    sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], _import_structure, module_spec=__spec__)
+#     sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], _import_structure, module_spec=__spec__)
