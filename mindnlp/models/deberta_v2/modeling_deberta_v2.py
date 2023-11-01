@@ -42,10 +42,8 @@ from ...utils import add_code_sample_docstrings, add_start_docstrings, add_start
 
 logger = logging.get_logger(__name__)
 _CONFIG_FOR_DOC = "DebertaV2Config"
+_TOKENIZER_FOR_DOC = "DebertaV2Tokenizer"
 _CHECKPOINT_FOR_DOC = "microsoft/deberta-v2-xlarge"
-
-_QA_TARGET_START_INDEX = 2
-_QA_TARGET_END_INDEX = 9
 
 DEBERTA_V2_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "microsoft/deberta-v2-xlarge",
@@ -332,7 +330,6 @@ class DebertaV2Encoder(nn.Cell):
             self.max_relative_positions = getattr(config, "max_relative_positions", -1)
             if self.max_relative_positions < 1:
                 self.max_relative_positions = config.max_position_embeddings
-            # self.rel_embeddings = nn.Embedding(self.max_relative_positions * 2, config.hidden_size)
 
             self.position_buckets = getattr(config, "position_buckets", -1)
             pos_ebd_size = self.max_relative_positions * 2
@@ -373,8 +370,7 @@ class DebertaV2Encoder(nn.Cell):
                 q,
                 hidden_states.shape[-2],
                 bucket_size=self.position_buckets,
-                max_position=self.max_relative_positions,
-                # device=hidden_states.device,
+                max_position=self.max_relative_positions
             )
         return relative_pos
 
@@ -488,18 +484,15 @@ def build_relative_position(query_size, key_size, bucket_size=-1, max_position=-
     return rel_pos_ids
 
 
-# @jit.script
 def c2p_dynamic_expand(c2p_pos: Tensor, query_layer: Tensor, relative_pos: Tensor):
 
     return c2p_pos.broadcast_to((query_layer.shape[0], query_layer.shape[1], query_layer.shape[2], relative_pos.shape[-1]))
 
 
-# @jit.script
 def p2c_dynamic_expand(c2p_pos: Tensor, query_layer: Tensor, key_layer: Tensor):
     return c2p_pos.broadcast_to((query_layer.shape[0], query_layer.shape[1], key_layer.shape[-2], key_layer.shape[-2]))
 
 
-# @jit.script
 def pos_dynamic_expand(pos_index: Tensor, p2c_att: Tensor, key_layer: Tensor):
     return pos_index.broadcast_to(p2c_att.shape[:2] + (pos_index.shape[-2], key_layer.shape[-2]))
 
@@ -530,16 +523,9 @@ class DisentangledSelfAttention(nn.Cell):
         self.key_proj = nn.Dense(config.hidden_size, self.all_head_size, has_bias=True)
         self.value_proj = nn.Dense(config.hidden_size, self.all_head_size, has_bias=True)
         self.share_att_key = getattr(config, "share_att_key", False)
-        # self.q_bias = ms.Parameter(ops.zeros((self.all_head_size), dtype=ms.float32))
-        # self.v_bias = ms.Parameter(ops.zeros((self.all_head_size), dtype=ms.float32))
         self.pos_att_type = config.pos_att_type if config.pos_att_type is not None else []
 
         self.relative_attention = getattr(config, "relative_attention", False)
-        # self.talking_head = getattr(config, "talking_head", False)
-
-        # if self.talking_head:
-        #     self.head_logits_proj = nn.Dense(config.num_attention_heads, config.num_attention_heads, has_bias=False)
-        #     self.head_weights_proj = nn.Dense(config.num_attention_heads, config.num_attention_heads, has_bias=False)
 
         if self.relative_attention:
             self.position_buckets = getattr(config, "position_buckets", -1)
@@ -671,7 +657,6 @@ class DisentangledSelfAttention(nn.Cell):
             raise ValueError(f"Relative position ids must be of dim 2 or 3 or 4. {relative_pos.dim()}")
 
         att_span = self.pos_ebd_size
-        # relative_pos = relative_pos.long()
         rel_embeddings = rel_embeddings[0 : att_span * 2, :].unsqueeze(0)
         if self.share_att_key:
             pos_query_layer = self.transpose_for_scores(
@@ -686,7 +671,7 @@ class DisentangledSelfAttention(nn.Cell):
             if "c2p" in self.pos_att_type:
                 pos_key_layer = self.transpose_for_scores(
                     self.pos_key_proj(rel_embeddings), self.num_attention_heads
-                )#.repeat(query_layer.shape[0] // self.num_attention_heads, 1, 1 )  # .split(self.all_head_size, dim=-1)
+                )
                 pos_key_layer = pos_key_layer.broadcast_to((query_layer.shape[0], pos_key_layer.shape[-2], pos_key_layer.shape[-1]))
             if "p2c" in self.pos_att_type:
                 pos_query_layer = self.transpose_for_scores(
@@ -694,7 +679,7 @@ class DisentangledSelfAttention(nn.Cell):
                 )
                 pos_query_layer = pos_query_layer.broadcast_to(
                     (query_layer.shape[0], pos_query_layer.shape[-2], pos_query_layer.shape[-1])
-                )  # .split(self.all_head_size, dim=-1)
+                )
 
         score = 0
 
@@ -716,7 +701,6 @@ class DisentangledSelfAttention(nn.Cell):
         if "p2c" in self.pos_att_type or "p2p" in self.pos_att_type:
             scale = ops.sqrt(Tensor(pos_query_layer.shape[-1], dtype=ms.float32) * scale_factor)
 
-            # pos_query_layer /= ops.sqrt(Tensor(pos_query_layer.shape[-1], dtype=ms.float32) * scale_factor)
             if query_layer.shape[-2] != key_layer.shape[-2]:
                 r_pos = build_relative_position(
                     key_layer.shape[-2],
@@ -731,7 +715,7 @@ class DisentangledSelfAttention(nn.Cell):
             p2c_pos = ops.clip(-r_pos + att_span, 0, att_span * 2 - 1)
 
         if "p2c" in self.pos_att_type:
-            pos_query_layer = pos_query_layer.transpose(0, -1, -2)#.to(dtype=key_layer.dtype)
+            pos_query_layer = pos_query_layer.transpose(0, -1, -2)
             p2c_att = ops.matmul(key_layer, pos_query_layer)
 
             p2c_att = self.gather(
@@ -782,10 +766,6 @@ class DebertaV2Embeddings(nn.Cell):
         self.dropout = StableDropout(config.hidden_dropout_prob)
         self.config = config
 
-        # position_ids (1, len position emb) is contiguous in memory and exported when serialized
-        # self.register_buffer(
-        #     "position_ids", ops.arange(0, config.max_position_embeddings).expand((1, -1)), persistent=False
-        # )
         self.position_ids = Tensor(np.arange(0, config.max_position_embeddings)).expand_dims(0)
 
     def construct(self, input_ids=None, token_type_ids=None, position_ids=None, mask=None, inputs_embeds=None):
@@ -851,21 +831,13 @@ class DebertaV2PreTrainedModel(PreTrainedModel):
         if isinstance(module, nn.Dense):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
-            # module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             module.weight = ops.normal(module.weight.shape, mean=0, stddev=self.config.initializer_range)
             if module.bias is not None:
-                # module.bias.data.zero_()
                 module.bias = ops.zeros(module.bias.shape, dtype=module.bias.dtype)
         elif isinstance(module, nn.Embedding):
-            # module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             module.embedding_table = ops.normal(module.embedding_table.shape, mean=0, stddev=self.config.initializer_range)
             if module.padding_idx is not None:
-                # module.embedding_table[module.padding_idx].zero_()
                 module.embedding_table[module.padding_idx] = ops.zeros_like(module.embedding_table[module.padding_idx])
-
-    # def _set_gradient_checkpointing(self, module, value=False):
-    #     if isinstance(module, DebertaV2Encoder):
-    #         module.gradient_checkpointing = value
 
 
 DEBERTA_START_DOCSTRING = r"""
@@ -957,12 +929,12 @@ class DebertaV2Model(DebertaV2PreTrainedModel):
         """
         raise NotImplementedError("The prune function is not implemented in DeBERTa model.")
 
-    # @add_start_docstrings_to_model_construct(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    # @add_code_sample_docstrings(
-    #     checkpoint=_CHECKPOINT_FOR_DOC,
-    #     output_type=BaseModelOutput,
-    #     config_class=_CONFIG_FOR_DOC,
-    # )
+    @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=BaseModelOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def construct(
         self,
         input_ids: Optional[Tensor] = None,
@@ -1044,7 +1016,7 @@ class DebertaV2Model(DebertaV2PreTrainedModel):
         )
 
 
-# @add_start_docstrings("""DeBERTa Model with a `language modeling` head on top.""", DEBERTA_START_DOCSTRING)
+@add_start_docstrings("""DeBERTa Model with a `language modeling` head on top.""", DEBERTA_START_DOCSTRING)
 class DebertaV2ForMaskedLM(DebertaV2PreTrainedModel):
     _tied_weights_keys = ["cls.predictions.decoder.weight", "cls.predictions.decoder.bias"]
 
@@ -1063,15 +1035,13 @@ class DebertaV2ForMaskedLM(DebertaV2PreTrainedModel):
     def set_output_embeddings(self, new_embeddings):
         self.cls.predictions.decoder = new_embeddings
 
-    # @add_start_docstrings_to_model_construct(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    # @add_code_sample_docstrings(
-    #     checkpoint=_CHECKPOINT_FOR_MASKED_LM,
-    #     output_type=MaskedLMOutput,
-    #     config_class=_CONFIG_FOR_DOC,
-    #     mask="[MASK]",
-    #     expected_output=_MASKED_LM_EXPECTED_OUTPUT,
-    #     expected_loss=_MASKED_LM_EXPECTED_LOSS,
-    # )
+    @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        processor_class=_TOKENIZER_FOR_DOC,
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=MaskedLMOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def construct(
         self,
         input_ids: Optional[Tensor] = None,
@@ -1175,13 +1145,13 @@ class DebertaV2OnlyMLMHead(nn.Cell):
         return prediction_scores
 
 
-# @add_start_docstrings(
-#     """
-#     DeBERTa Model transformer with a sequence classification/regression head on top (a linear layer on top of the
-#     pooled output) e.g. for GLUE tasks.
-#     """,
-#     DEBERTA_START_DOCSTRING,
-# )
+@add_start_docstrings(
+    """
+    DeBERTa Model transformer with a sequence classification/regression head on top (a linear layer on top of the
+    pooled output) e.g. for GLUE tasks.
+    """,
+    DEBERTA_START_DOCSTRING,
+)
 class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1207,12 +1177,12 @@ class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
     def set_input_embeddings(self, new_embeddings):
         self.deberta.set_input_embeddings(new_embeddings)
 
-    # @add_start_docstrings_to_model_construct(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    # @add_code_sample_docstrings(
-    #     checkpoint=_CHECKPOINT_FOR_DOC,
-    #     output_type=SequenceClassifierOutput,
-    #     config_class=_CONFIG_FOR_DOC,
-    # )
+    @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=SequenceClassifierOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def construct(
         self,
         input_ids: Optional[Tensor] = None,
@@ -1293,13 +1263,13 @@ class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
         )
 
 
-# @add_start_docstrings(
-#     """
-#     DeBERTa Model with a token classification head on top (a linear layer on top of the hidden-states output) e.g. for
-#     Named-Entity-Recognition (NER) tasks.
-#     """,
-#     DEBERTA_START_DOCSTRING,
-# )
+@add_start_docstrings(
+    """
+    DeBERTa Model with a token classification head on top (a linear layer on top of the hidden-states output) e.g. for
+    Named-Entity-Recognition (NER) tasks.
+    """,
+    DEBERTA_START_DOCSTRING,
+)
 class DebertaV2ForTokenClassification(DebertaV2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1312,12 +1282,13 @@ class DebertaV2ForTokenClassification(DebertaV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    # @add_start_docstrings_to_model_construct(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    # @add_code_sample_docstrings(
-    #     checkpoint=_CHECKPOINT_FOR_DOC,
-    #     output_type=TokenClassifierOutput,
-    #     config_class=_CONFIG_FOR_DOC,
-    # )
+    @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        processor_class=_TOKENIZER_FOR_DOC,
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=TokenClassifierOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def construct(
         self,
         input_ids: Optional[Tensor] = None,
@@ -1366,13 +1337,13 @@ class DebertaV2ForTokenClassification(DebertaV2PreTrainedModel):
         )
 
 
-# @add_start_docstrings(
-#     """
-#     DeBERTa Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear
-#     layers on top of the hidden-states output to compute `span start logits` and `span end logits`).
-#     """,
-#     DEBERTA_START_DOCSTRING,
-# )
+@add_start_docstrings(
+    """
+    DeBERTa Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear
+    layers on top of the hidden-states output to compute `span start logits` and `span end logits`).
+    """,
+    DEBERTA_START_DOCSTRING,
+)
 class DebertaV2ForQuestionAnswering(DebertaV2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1384,16 +1355,13 @@ class DebertaV2ForQuestionAnswering(DebertaV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    # @add_start_docstrings_to_model_construct(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    # @add_code_sample_docstrings(
-    #     checkpoint=_CHECKPOINT_FOR_QA,
-    #     output_type=QuestionAnsweringModelOutput,
-    #     config_class=_CONFIG_FOR_DOC,
-    #     expected_output=_QA_EXPECTED_OUTPUT,
-    #     expected_loss=_QA_EXPECTED_LOSS,
-    #     qa_target_start_index=_QA_TARGET_START_INDEX,
-    #     qa_target_end_index=_QA_TARGET_END_INDEX,
-    # )
+    @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        processor_class=_TOKENIZER_FOR_DOC,
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=QuestionAnsweringModelOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def construct(
         self,
         input_ids: Optional[Tensor] = None,

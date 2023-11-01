@@ -14,8 +14,6 @@
 # limitations under the License.
 #=========================================================================
 """ DeBERTa model configuration"""
-# from collections import OrderedDict
-# from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
 
 from mindnlp.abc import PreTrainedConfig
 
@@ -23,9 +21,6 @@ from mindnlp.configs import HF_CONFIG_URL_BASE
 
 from ...utils import logging
 
-
-# # if TYPE_CHECKING:
-# #     from ... import FeatureExtractionMixin, PreTrainedTokenizerBase, TensorType
 
 __all__ = [
     "DebertaConfig"

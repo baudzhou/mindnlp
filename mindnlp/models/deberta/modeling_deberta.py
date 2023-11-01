@@ -192,7 +192,6 @@ class DebertaLayerNorm(nn.Cell):
 
     def construct(self, hidden_states: Tensor):
         input_type = hidden_states.dtype
-        # hidden_states = hidden_states.float()
         mean = hidden_states.mean(-1, keep_dims=True)
         variance = ops.pow(hidden_states - mean, 2).mean(-1, keep_dims=True)
         hidden_states = (hidden_states - mean) / ops.sqrt(variance + self.variance_epsilon)
@@ -430,18 +429,15 @@ def build_relative_position(query_size, key_size):
     return rel_pos_ids
 
 
-# @jit.script
 def c2p_dynamic_expand(c2p_pos: Tensor, query_layer: Tensor, relative_pos: Tensor):
 
     return c2p_pos.broadcast_to((query_layer.shape[0], query_layer.shape[1], query_layer.shape[2], relative_pos.shape[-1]))
 
 
-# @jit.script
 def p2c_dynamic_expand(c2p_pos: Tensor, query_layer: Tensor, key_layer: Tensor):
     return c2p_pos.broadcast_to((query_layer.shape[0], query_layer.shape[1], key_layer.shape[-2], key_layer.shape[-2]))
 
 
-# @jit.script
 def pos_dynamic_expand(pos_index: Tensor, p2c_att: Tensor, key_layer: Tensor):
     return pos_index.broadcast_to(p2c_att.shape[:2] + (pos_index.shape[-2], key_layer.shape[-2]))
 
@@ -603,7 +599,6 @@ class DisentangledSelfAttention(nn.Cell):
             raise ValueError(f"Relative position ids must be of dim 2 or 3 or 4. {relative_pos.dim()}")
 
         att_span = min(max(query_layer.shape[-2], key_layer.shape[-2]), self.max_relative_positions)
-        # relative_pos = relative_pos.long()
         rel_embeddings = rel_embeddings[
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
@@ -673,9 +668,6 @@ class DebertaEmbeddings(nn.Cell):
         self.config = config
 
         # position_ids (1, len position emb) is contiguous in memory and exported when serialized
-        # self.register_buffer(
-        #     "position_ids", ops.arange(0, config.max_position_embeddings).expand((1, -1)), persistent=False
-        # )
         self.position_ids = Tensor(np.arange(0, config.max_position_embeddings)).expand_dims(0)
 
     def construct(self, input_ids=None, token_type_ids=None, position_ids=None, mask=None, inputs_embeds=None):
@@ -741,21 +733,13 @@ class DebertaPreTrainedModel(PreTrainedModel):
         if isinstance(module, nn.Dense):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
-            # module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             module.weight = ops.normal(module.weight.shape, mean=0, stddev=self.config.initializer_range)
             if module.bias is not None:
-                # module.bias.data.zero_()
                 module.bias = ops.zeros(module.bias.shape, dtype=module.bias.dtype)
         elif isinstance(module, nn.Embedding):
-            # module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             module.embedding_table = ops.normal(module.embedding_table.shape, mean=0, stddev=self.config.initializer_range)
             if module.padding_idx is not None:
-                # module.embedding_table[module.padding_idx].zero_()
                 module.embedding_table[module.padding_idx] = ops.zeros_like(module.embedding_table[module.padding_idx])
-
-    # def _set_gradient_checkpointing(self, module, value=False):
-    #     if isinstance(module, DebertaEncoder):
-    #         module.gradient_checkpointing = value
 
 
 DEBERTA_START_DOCSTRING = r"""
@@ -873,14 +857,11 @@ class DebertaModel(DebertaPreTrainedModel):
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
-            # self.warn_if_padding_and_no_attention_mask(input_ids, attention_mask)
             input_shape = input_ids.shape
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.shape[:-1]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
-
-        # device = input_ids.device if input_ids is not None else inputs_embeds.device
 
         if attention_mask is None:
             attention_mask = ops.ones(input_shape)
