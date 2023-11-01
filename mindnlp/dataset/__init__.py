@@ -16,11 +16,5 @@
 Dataset init
 """
 
-from .text_classification import *
-from .machine_translation import *
-from .question_answer import *
-from .sequence_tagging import *
-from .text_generation import *
-from .hf_datasets import *
-from .chat import *
-from .register import load_dataset, process
+from .load import load_dataset
+from .load_modelscope import load_dataset_from_ms

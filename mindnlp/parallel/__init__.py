@@ -14,8 +14,8 @@
 # ============================================================================
 """MindNLP Parallel modules, which is ported from Megatron."""
 
-from . import layers
-from .layers import *
+from . import tensor_parallel
+from .tensor_parallel import *
 
 __all__ = []
-__all__.extend(layers.__all__)
+__all__.extend(tensor_parallel.__all__)
